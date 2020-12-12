@@ -391,7 +391,7 @@ lws_create_context(const struct lws_context_creation_info *info)
 	pid_t pid_daemon = get_daemonize_pid();
 #endif
 #if defined(LWS_WITH_NETWORK)
-	int count_threads = 1;
+	unsigned short count_threads = 1;
 	uint8_t *u;
 #endif
 #if defined(__ANDROID__)
@@ -405,7 +405,8 @@ lws_create_context(const struct lws_context_creation_info *info)
 		s1 = 4096,
 #endif
 		size = sizeof(struct lws_context);
-	int n, lpf = info->fd_limit_per_thread;
+	int n;
+	unsigned int lpf = info->fd_limit_per_thread;
 	const lws_plugin_evlib_t *plev = NULL;
 #if defined(LWS_WITH_EVLIB_PLUGINS) && defined(LWS_WITH_EVENT_LIBS)
 	struct lws_plugin		*evlib_plugin_list = NULL;
@@ -448,7 +449,7 @@ lws_create_context(const struct lws_context_creation_info *info)
 
 #if defined(LWS_WITH_NETWORK)
 	if (info->count_threads)
-		count_threads = info->count_threads;
+		count_threads = (unsigned short)info->count_threads;
 
 	if (count_threads > LWS_MAX_SMP)
 		count_threads = LWS_MAX_SMP;
@@ -511,7 +512,7 @@ lws_create_context(const struct lws_context_creation_info *info)
 					   LWS_TOKENIZE_F_NO_FLOATS;
 
 				do {
-					ts.e = lws_tokenize(&ts);
+					ts.e = (int8_t)lws_tokenize(&ts);
 					if (ts.e != LWS_TOKZE_TOKEN)
 						continue;
 
@@ -664,7 +665,8 @@ lws_create_context(const struct lws_context_creation_info *info)
 #endif
 
 #if defined(LWS_WITH_NETWORK)
-	context->undestroyed_threads = context->count_threads = count_threads;
+	context->undestroyed_threads = count_threads;
+	context->count_threads = count_threads;
 #if defined(LWS_WITH_DETAILED_LATENCY)
 	context->detailed_latency_cb = info->detailed_latency_cb;
 	context->detailed_latency_filepath = info->detailed_latency_filepath;
@@ -769,7 +771,8 @@ lws_create_context(const struct lws_context_creation_info *info)
 	if (info->rlimit_nofile) {
 		struct rlimit rl;
 
-		rl.rlim_cur = rl.rlim_max = info->rlimit_nofile;
+		rl.rlim_cur = (unsigned int)info->rlimit_nofile;
+		rl.rlim_max = (unsigned int)info->rlimit_nofile;
 		setrlimit(RLIMIT_NOFILE, &rl);
 	}
 #endif
@@ -787,7 +790,7 @@ lws_create_context(const struct lws_context_creation_info *info)
 
 		goto free_context_fail;
 	}
-	context->max_fds = rt.rlim_cur;
+	context->max_fds = (unsigned int)rt.rlim_cur;
 #else
 #if defined(WIN32) || defined(_WIN32) || defined(LWS_AMAZON_RTOS) || defined(LWS_ESP_PLATFORM)
 	context->max_fds = getdtablesize();
@@ -802,10 +805,10 @@ lws_create_context(const struct lws_context_creation_info *info)
 				  __func__);
 		else
 			if (l != -1l)
-				context->max_fds = (int)l;
+				context->max_fds = (unsigned int)l;
 	}
 #endif
-	if (context->max_fds < 0) {
+	if ((int)context->max_fds < 0) {
 		lwsl_err("%s: problem getting process max files\n",
 			 __func__);
 
@@ -819,7 +822,7 @@ lws_create_context(const struct lws_context_creation_info *info)
 	 * figure out what if this is something it can deal with.
 	 */
 	if (info->fd_limit_per_thread) {
-		int mf = lpf * context->count_threads;
+		unsigned int mf = lpf * context->count_threads;
 
 		if (mf < context->max_fds) {
 			context->max_fds_unrelated_to_ulimit = 1;
@@ -843,10 +846,10 @@ lws_create_context(const struct lws_context_creation_info *info)
 			if (ar->alpn) {
 				if (!first)
 					*p++ = ',';
-				p += lws_snprintf(p,
-					context->tls.alpn_discovered +
+				p += lws_snprintf(p, (unsigned int)(
+					(context->tls.alpn_discovered +
 					sizeof(context->tls.alpn_discovered) -
-					2 - p, "%s", ar->alpn);
+					2) - p), "%s", ar->alpn);
 				first = 0;
 			}
 		} LWS_FOR_EVERY_AVAILABLE_ROLE_END;
@@ -868,7 +871,7 @@ lws_create_context(const struct lws_context_creation_info *info)
 	else
 		if (info->max_http_header_data2)
 			context->max_http_header_data =
-					info->max_http_header_data2;
+					(unsigned short)info->max_http_header_data2;
 		else
 			context->max_http_header_data = LWS_DEF_HEADER_LEN;
 
@@ -877,7 +880,7 @@ lws_create_context(const struct lws_context_creation_info *info)
 	else
 		if (info->max_http_header_pool2)
 			context->max_http_header_pool =
-					info->max_http_header_pool2;
+					(unsigned short)info->max_http_header_pool2;
 		else
 			context->max_http_header_pool = context->max_fds;
 #endif
@@ -939,7 +942,7 @@ lws_create_context(const struct lws_context_creation_info *info)
 		u += context->pt_serv_buf_size;
 
 		context->pt[n].context = context;
-		context->pt[n].tid = n;
+		context->pt[n].tid = (uint8_t)n;
 
 #if !defined(LWS_PLAT_FREERTOS)
 		/*
@@ -1002,9 +1005,9 @@ lws_create_context(const struct lws_context_creation_info *info)
 	 * fds table contains pollfd structs for as many pollfds as we can
 	 * handle... spread across as many service threads as we have going
 	 */
-	n = sizeof(struct lws_pollfd) * context->count_threads *
-	    context->fd_limit_per_thread;
-	context->pt[0].fds = lws_zalloc(n, "fds table");
+	n = (int)(sizeof(struct lws_pollfd) * context->count_threads *
+	    context->fd_limit_per_thread);
+	context->pt[0].fds = lws_zalloc((unsigned int)n, "fds table");
 	if (context->pt[0].fds == NULL) {
 		lwsl_err("OOM allocating %d fds\n", context->max_fds);
 		goto bail;
@@ -1909,7 +1912,7 @@ next:
 
 		for (n = 0; n < LWS_SYSBLOB_TYPE_COUNT; n++)
 			lws_system_blob_destroy(
-					lws_system_get_blob(context, n, 0));
+					lws_system_get_blob(context, (lws_system_blob_item_t)n, 0));
 
 		/*
 		 * Context lock is about to go away
